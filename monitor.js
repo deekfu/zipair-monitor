@@ -123,10 +123,10 @@ async function checkZipair() {
   }
 }
 
-// ─── Schedule: 8am and 8pm Pacific ───────────────────────────────────────────
 
-schedule.scheduleJob('0 8  * * *', checkZipair); // 8:00 AM
-schedule.scheduleJob('0 20 * * *', checkZipair); // 8:00 PM
+// ─── SchedulEvery 6 hours pm Pacific ───────────────────────────────────────────
+
+schedule.scheduleJob('0 */6 * * *', checkZipair); // every 6 hours
 
 console.log('✅ Zipair monitor running. Scheduled 8am + 8pm Pacific.');
 console.log('   Running first check now...\n');
