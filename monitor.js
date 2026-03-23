@@ -46,45 +46,36 @@ async function checkZipair() {
       ],
     });
 
-    const page = await browser.newPage();
-
     // Step 1 — visit homepage to get Cloudflare clearance
+    const page = await browser.newPage();
     await page.goto('https://www.zipair.net/en', {
       waitUntil: 'networkidle2',
       timeout: 60000
     });
     await new Promise(r => setTimeout(r, 5000));
 
-    // Step 2 — visit search page to get all cookies including zipair_token
+    // Step 2 — visit search page to set all cookies
     await page.goto(
       'https://www.zipair.net/en/flight/search?origin=LAX&destination=NRT&adult=3&childA=0&childB=0&childC=0&infant=0',
       { waitUntil: 'networkidle2', timeout: 60000 }
     );
     await new Promise(r => setTimeout(r, 8000));
 
-    // Step 3 — grab all cookies from the browser
-    const cookies = await page.cookies();
-    const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-    console.log('Cookies captured:', cookies.map(c => c.name).join(', '));
+    // Step 3 — open the API URL directly in a new browser tab
+    const apiPage = await browser.newPage();
+    await apiPage.goto(
+      'https://bff.zipair.net/v1/flights/calendar?adult=3&childA=0&childB=0&childC=0&infant=0&routes=LAX%2CNRT&currency=USD&language=en&departureDateFrom=2026-11-01&departureDateTo=2026-11-30',
+      { waitUntil: 'networkidle2', timeout: 60000 }
+    );
+
+    // Step 4 — grab the JSON response from the page body
+    const content = await apiPage.evaluate(() => document.body.innerText);
+    console.log('Raw API response (first 200 chars):', content.substring(0, 200));
+    const calendarData = JSON.parse(content);
 
     await browser.close();
     browser = null;
 
-    // Step 4 — use real browser cookies to call November calendar API
-    const calendarResponse = await fetch(
-      'https://bff.zipair.net/v1/flights/calendar?adult=3&childA=0&childB=0&childC=0&infant=0&routes=LAX%2CNRT&currency=USD&language=en&departureDateFrom=2026-11-01&departureDateTo=2026-11-30',
-      {
-        headers: {
-          'accept': 'application/json',
-          'origin': 'https://www.zipair.net',
-          'referer': 'https://www.zipair.net/',
-          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
-          'cookie': cookieString,
-        }
-      }
-    );
-
-    const calendarData = await calendarResponse.json();
     console.log('Total dates returned:', calendarData.data.length);
 
     const available = calendarData.data.filter(d =>
