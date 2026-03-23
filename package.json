@@ -1,0 +1,16 @@
+{
+  "name": "zipair-monitor",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node monitor.js"
+  },
+  "dependencies": {
+    "puppeteer": "^24.15.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "node-schedule": "^2.1.1",
+    "dotenv": "^16.0.0"
+  }
+}
+
