@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node monitor.js"
+"postinstall": "npx puppeteer browsers install chrome",    
+"start": "node monitor.js"
   },
   "dependencies": {
     "puppeteer": "^24.15.0",
