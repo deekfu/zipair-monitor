@@ -52,7 +52,25 @@ async function checkZipair() {
 
     const page = await browser.newPage();
 
+    // Visit homepage first to get Cloudflare clearance
+    await page.goto('https://www.zipair.net/en', {
+      waitUntil: 'networkidle2',
+      timeout: 60000
+    });
+
+    await new Promise(r => setTimeout(r, 8000));
+
+    // Now navigate to the search page
     await page.goto(
+      'https://www.zipair.net/en/flight/search?origin=LAX&destination=NRT&adult=3&childA=0&childB=0&childC=0&infant=0',
+      { waitUntil: 'networkidle2', timeout: 60000 }
+    );
+
+    await new Promise(r => setTimeout(r, 10000));
+
+    // Scroll to trigger any lazy-loaded content
+    await page.evaluate(() => window.scrollBy(0, 500));
+    await new Promise(r => setTimeout(r, 5000));    await page.goto(
       'https://www.zipair.net/en/flight/search?origin=LAX&destination=NRT&adult=3&childA=0&childB=0&childC=0&infant=0',
       { waitUntil: 'networkidle2', timeout: 60000 }
     );
