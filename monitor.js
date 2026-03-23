@@ -47,47 +47,44 @@ async function checkZipair() {
     });
 
     const page = await browser.newPage();
-    let calendarData = null;
 
-    // Intercept calendar API as the page calls it naturally
-    page.on('response', async (response) => {
-      if (response.url().includes('bff.zipair.net/v1/flights')) {
-        console.log('API call intercepted:', response.url());  
-      try {
-          const text = await response.text();
-          calendarData = JSON.parse(text);
-          console.log('Calendar data intercepted!');
-        } catch (e) {
-          console.log('Calendar parse error:', e.message);
-        }
-      }
-    });
-
-    // Step 1 — visit homepage first to get Cloudflare clearance
+    // Step 1 — visit homepage to get Cloudflare clearance
     await page.goto('https://www.zipair.net/en', {
       waitUntil: 'networkidle2',
       timeout: 60000
     });
     await new Promise(r => setTimeout(r, 5000));
 
-    // Step 2 — navigate to search page which triggers the calendar API
+    // Step 2 — visit search page to get all cookies including zipair_token
     await page.goto(
       'https://www.zipair.net/en/flight/search?origin=LAX&destination=NRT&adult=3&childA=0&childB=0&childC=0&infant=0',
       { waitUntil: 'networkidle2', timeout: 60000 }
     );
-    await new Promise(r => setTimeout(r, 10000));
+    await new Promise(r => setTimeout(r, 8000));
 
-    // Scroll to trigger any lazy loaded content
-    await page.evaluate(() => window.scrollBy(0, 500));
-    await new Promise(r => setTimeout(r, 5000));
+    // Step 3 — grab all cookies from the browser
+    const cookies = await page.cookies();
+    const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+    console.log('Cookies captured:', cookies.map(c => c.name).join(', '));
 
     await browser.close();
     browser = null;
 
-    if (!calendarData) {
-      throw new Error('Calendar API was not intercepted.');
-    }
+    // Step 4 — use real browser cookies to call November calendar API
+    const calendarResponse = await fetch(
+      'https://bff.zipair.net/v1/flights/calendar?adult=3&childA=0&childB=0&childC=0&infant=0&routes=LAX%2CNRT&currency=USD&language=en&departureDateFrom=2026-11-01&departureDateTo=2026-11-30',
+      {
+        headers: {
+          'accept': 'application/json',
+          'origin': 'https://www.zipair.net',
+          'referer': 'https://www.zipair.net/',
+          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
+          'cookie': cookieString,
+        }
+      }
+    );
 
+    const calendarData = await calendarResponse.json();
     console.log('Total dates returned:', calendarData.data.length);
 
     const available = calendarData.data.filter(d =>
@@ -98,13 +95,11 @@ async function checkZipair() {
       const dateList = available
         .map(d => `  ${d.departureDate}: $${d.price}`)
         .join('\n');
-
       await sendPush(
         `🚨 ZIPAIR ALERT — November tickets LIVE!\n\n` +
         `${available.length} date(s) available:\n${dateList}\n\n` +
         `Book NOW → zipair.net\n📅 Checked: ${now}`
       );
-
     } else {
       await sendPush(
         `✅ Zipair checked — no November availability yet.\n\n` +
