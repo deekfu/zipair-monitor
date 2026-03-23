@@ -5,8 +5,6 @@ import 'dotenv/config';
 
 puppeteer.use(StealthPlugin());
 
-// ─── Pushover ─────────────────────────────────────────────────────────────────
-
 async function sendPush(message) {
   const res = await fetch('https://api.pushover.net/1/messages.json', {
     method: 'POST',
@@ -24,8 +22,6 @@ async function sendPush(message) {
     console.error('Pushover error:', JSON.stringify(data));
   }
 }
-
-// ─── Main Check ───────────────────────────────────────────────────────────────
 
 async function checkZipair() {
   const now = new Date().toLocaleString('en-US', {
@@ -51,63 +47,45 @@ async function checkZipair() {
     });
 
     const page = await browser.newPage();
+    let calendarData = null;
 
-    // Visit homepage first to get Cloudflare clearance
+    // Intercept calendar API as the page calls it naturally
+    page.on('response', async (response) => {
+      if (response.url().includes('bff.zipair.net/v1/flights/calendar')) {
+        try {
+          const text = await response.text();
+          calendarData = JSON.parse(text);
+          console.log('Calendar data intercepted!');
+        } catch (e) {
+          console.log('Calendar parse error:', e.message);
+        }
+      }
+    });
+
+    // Step 1 — visit homepage first to get Cloudflare clearance
     await page.goto('https://www.zipair.net/en', {
       waitUntil: 'networkidle2',
       timeout: 60000
     });
+    await new Promise(r => setTimeout(r, 5000));
 
-    await new Promise(r => setTimeout(r, 8000));
-
-    // Now navigate to the search page
+    // Step 2 — navigate to search page which triggers the calendar API
     await page.goto(
       'https://www.zipair.net/en/flight/search?origin=LAX&destination=NRT&adult=3&childA=0&childB=0&childC=0&infant=0',
       { waitUntil: 'networkidle2', timeout: 60000 }
     );
-
     await new Promise(r => setTimeout(r, 10000));
 
-    // Scroll to trigger any lazy-loaded content
+    // Scroll to trigger any lazy loaded content
     await page.evaluate(() => window.scrollBy(0, 500));
-    await new Promise(r => setTimeout(r, 5000));    await page.goto(
-      'https://www.zipair.net/en/flight/search?origin=LAX&destination=NRT&adult=3&childA=0&childB=0&childC=0&infant=0',
-      { waitUntil: 'networkidle2', timeout: 60000 }
-    );
-
-    // Wait extra time for Zipair JS to execute and set cookies
-    await new Promise(r => setTimeout(r, 8000));
-
-    // Scroll to trigger any lazy-loaded content
-    await page.evaluate(() => window.scrollBy(0, 500));
-    await new Promise(r => setTimeout(r, 3000));
-
-    const cookies = await page.cookies();
-    console.log('Cookies found:', cookies.map(c => c.name).join(', '));
-    const tokenCookie = cookies.find(c => c.name === 'zipair_token');
-    const authToken = tokenCookie?.value;
-
-    if (!authToken) {
-      throw new Error('Could not find zipair_token in cookies.');
-    }
+    await new Promise(r => setTimeout(r, 5000));
 
     await browser.close();
     browser = null;
 
-    // Call calendar API directly from Node.js using the token
-    const calendarResponse = await fetch(
-      'https://bff.zipair.net/v1/flights/calendar?adult=3&childA=0&childB=0&childC=0&infant=0&routes=LAX%2CNRT&currency=USD&language=en&departureDateFrom=2026-11-01&departureDateTo=2026-11-30',
-      {
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'accept': 'application/json',
-          'origin': 'https://www.zipair.net',
-          'referer': 'https://www.zipair.net/',
-          'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
-        }
-      }
-    );
-    const calendarData = await calendarResponse.json();
+    if (!calendarData) {
+      throw new Error('Calendar API was not intercepted.');
+    }
 
     console.log('Total dates returned:', calendarData.data.length);
 
@@ -141,12 +119,9 @@ async function checkZipair() {
   }
 }
 
+schedule.scheduleJob('0 */4 * * *', checkZipair); // every 4 hours
 
-// ─── SchedulEvery 6 hours pm Pacific ───────────────────────────────────────────
-
-schedule.scheduleJob('0 */6 * * *', checkZipair); // every 6 hours
-
-console.log('✅ Zipair monitor running. Scheduled 8am + 8pm Pacific.');
+console.log('✅ Zipair monitor running. Scheduled every 4 hours.');
 console.log('   Running first check now...\n');
 
 checkZipair();
