@@ -51,8 +51,9 @@ async function checkZipair() {
 
     // Intercept calendar API as the page calls it naturally
     page.on('response', async (response) => {
-      if (response.url().includes('bff.zipair.net/v1/flights/calendar')) {
-        try {
+      if (response.url().includes('bff.zipair.net/v1/flights')) {
+        console.log('API call intercepted:', response.url());  
+      try {
           const text = await response.text();
           calendarData = JSON.parse(text);
           console.log('Calendar data intercepted!');
