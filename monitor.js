@@ -91,23 +91,23 @@ async function checkZipair() {
       throw new Error('Could not find zipair_token in cookies.');
     }
 
-    const calendarData = await page.evaluate(async (token) => {
-      const res = await fetch(
-        'https://bff.zipair.net/v1/flights/calendar?adult=3&childA=0&childB=0&childC=0&infant=0&routes=LAX%2CNRT&currency=USD&language=en&departureDateFrom=2026-11-01&departureDateTo=2026-11-30',
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'accept': 'application/json',
-            'origin': 'https://www.zipair.net',
-            'referer': 'https://www.zipair.net/',
-          }
-        }
-      );
-      return res.json();
-    }, authToken);
-
     await browser.close();
     browser = null;
+
+    // Call calendar API directly from Node.js using the token
+    const calendarResponse = await fetch(
+      'https://bff.zipair.net/v1/flights/calendar?adult=3&childA=0&childB=0&childC=0&infant=0&routes=LAX%2CNRT&currency=USD&language=en&departureDateFrom=2026-11-01&departureDateTo=2026-11-30',
+      {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'accept': 'application/json',
+          'origin': 'https://www.zipair.net',
+          'referer': 'https://www.zipair.net/',
+          'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
+        }
+      }
+    );
+    const calendarData = await calendarResponse.json();
 
     console.log('Total dates returned:', calendarData.data.length);
 
