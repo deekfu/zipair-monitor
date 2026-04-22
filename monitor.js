@@ -46,27 +46,10 @@ async function checkZipair() {
     });
 
     const page = await browser.newPage();
-
-    // Set a realistic viewport and user agent
     await page.setViewport({ width: 1280, height: 800 });
     await page.setUserAgent(
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
     );
-
-    // Intercept the calendar API response as the page loads it naturally
-    let calendarData = null;
-    page.on('response', async (response) => {
-      const url = response.url();
-      if (url.includes('bff.zipair.net/v1/flights/calendar')) {
-        try {
-          const json = await response.json();
-          calendarData = json;
-          console.log('Intercepted calendar API response ✅');
-        } catch (e) {
-          console.log('Failed to parse intercepted response:', e.message);
-        }
-      }
-    });
 
     // Step 1 — visit homepage for Cloudflare clearance
     console.log('Step 1: Loading homepage...');
@@ -76,29 +59,43 @@ async function checkZipair() {
     });
     await new Promise(r => setTimeout(r, 5000));
 
-    // Step 2 — navigate to search page (this triggers the calendar API call)
+    // Step 2 — visit search page to collect session cookies
     console.log('Step 2: Loading search page...');
     await page.goto(
       'https://www.zipair.net/en/flight/search?origin=LAX&destination=NRT&adult=3&childA=0&childB=0&childC=0&infant=0',
       { waitUntil: 'networkidle2', timeout: 60000 }
     );
+    await new Promise(r => setTimeout(r, 5000));
 
-    // Wait up to 15s for the intercepted API response to arrive
-    const maxWait = 15000;
-    const interval = 500;
-    let waited = 0;
-    while (!calendarData && waited < maxWait) {
-      await new Promise(r => setTimeout(r, interval));
-      waited += interval;
-    }
+    // Step 3 — extract cookies and use them to call the BFF API directly
+    console.log('Step 3: Extracting cookies...');
+    const cookies = await page.cookies();
+    const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+    console.log(`Got ${cookies.length} cookies`);
 
     await browser.close();
     browser = null;
 
-    if (!calendarData) {
-      throw new Error('Calendar API response was never intercepted — page may not have triggered it');
+    // Step 4 — fetch the calendar API with real session cookies
+    console.log('Step 4: Calling calendar API...');
+    const url = 'https://bff.zipair.net/v1/flights/calendar?adult=3&childA=0&childB=0&childC=0&infant=0&routes=LAX%2CNRT&currency=USD&language=en&departureDateFrom=2026-11-01&departureDateTo=2026-11-30';
+
+    const res = await fetch(url, {
+      headers: {
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Origin': 'https://www.zipair.net',
+        'Referer': 'https://www.zipair.net/',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Cookie': cookieHeader,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} — ${res.statusText}`);
     }
 
+    const calendarData = await res.json();
     console.log('Raw API response (first 200 chars):', JSON.stringify(calendarData).substring(0, 200));
     console.log('Total dates returned:', calendarData.data.length);
 
