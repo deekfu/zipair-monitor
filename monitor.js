@@ -51,84 +51,64 @@ async function checkZipair() {
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
     );
 
-    // Intercept requests to bff.zipair.net and capture headers + response
-    let capturedData = null;
-    let capturedHeaders = null;
-
-    await page.setRequestInterception(true);
-
-    page.on('request', (request) => {
-      const url = request.url();
-      if (url.includes('bff.zipair.net')) {
-        console.log('Outgoing BFF request detected:', url);
-        console.log('Request headers:', JSON.stringify(request.headers()));
-        capturedHeaders = request.headers();
-      }
-      request.continue();
-    });
-
-    page.on('response', async (response) => {
-      const url = response.url();
-      if (url.includes('bff.zipair.net/v1/flights/calendar')) {
-        try {
-          console.log('Response status:', response.status());
-          if (response.status() === 200) {
-            capturedData = await response.json();
-            console.log('Calendar API response intercepted ✅');
-          } else {
-            console.log('BFF API returned non-200:', response.status());
-          }
-        } catch (e) {
-          console.log('Failed to parse response:', e.message);
-        }
-      }
-    });
-
     // Step 1 — homepage for Cloudflare clearance
     console.log('Step 1: Loading homepage...');
     await page.goto('https://www.zipair.net/en', {
       waitUntil: 'networkidle2',
       timeout: 60000,
     });
-    await new Promise(r => setTimeout(r, 6000));
+    await new Promise(r => setTimeout(r, 5000));
 
-    // Step 2 — search page to trigger calendar API call
+    // Step 2 — search page to trigger token generation
     console.log('Step 2: Loading search page...');
     await page.goto(
       'https://www.zipair.net/en/flight/search?origin=LAX&destination=NRT&adult=3&childA=0&childB=0&childC=0&infant=0',
       { waitUntil: 'networkidle2', timeout: 60000 }
     );
 
-    // Wait up to 30s for the API call to be intercepted
-    console.log('Step 3: Waiting for calendar API call...');
-    const maxWait = 30000;
+    // Step 3 — wait for zipair_token cookie to be set
+    console.log('Step 3: Waiting for zipair_token cookie...');
+    let zipairToken = null;
+    const maxWait = 20000;
     const interval = 500;
     let waited = 0;
-    while (!capturedData && waited < maxWait) {
+    while (!zipairToken && waited < maxWait) {
       await new Promise(r => setTimeout(r, interval));
       waited += interval;
+      const cookies = await page.cookies();
+      const tokenCookie = cookies.find(c => c.name === 'zipair_token');
+      if (tokenCookie) {
+        zipairToken = tokenCookie.value;
+        console.log('zipair_token found ✅:', zipairToken);
+      }
     }
 
-    // If page didn't call the API automatically, try scrolling to trigger it
-    if (!capturedData) {
-      console.log('No API call detected yet — trying scroll to trigger...');
-      await page.evaluate(() => window.scrollBy(0, 500));
-      await new Promise(r => setTimeout(r, 10000));
+    if (!zipairToken) {
+      throw new Error('zipair_token cookie never appeared');
     }
+
+    // Step 4 — call calendar API from inside the browser with token cookie active
+    console.log('Step 4: Calling calendar API from browser context...');
+    const calendarData = await page.evaluate(async () => {
+      const url = 'https://bff.zipair.net/v1/flights/calendar?adult=3&childA=0&childB=0&childC=0&infant=0&routes=LAX%2CNRT&currency=USD&language=en&departureDateFrom=2026-11-01&departureDateTo=2026-11-30';
+      const res = await fetch(url, {
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json, text/plain, */*',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status} — ${res.statusText}`);
+      return res.json();
+    });
 
     await browser.close();
     browser = null;
 
-    if (!capturedData) {
-      throw new Error(
-        `Calendar API was never called by the page.\nCaptured headers: ${JSON.stringify(capturedHeaders)}`
-      );
-    }
+    console.log('Raw API response (first 200 chars):', JSON.stringify(calendarData).substring(0, 200));
+    console.log('Total dates returned:', calendarData.data.length);
 
-    console.log('Raw API response (first 200 chars):', JSON.stringify(capturedData).substring(0, 200));
-    console.log('Total dates returned:', capturedData.data.length);
-
-    const available = capturedData.data.filter(d =>
+    const available = calendarData.data.filter(d =>
       d.departureDate?.startsWith('2026-11') && d.price != null
     );
 
